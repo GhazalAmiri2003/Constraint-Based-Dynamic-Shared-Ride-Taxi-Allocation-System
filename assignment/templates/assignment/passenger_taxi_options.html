@@ -1,0 +1,405 @@
+{% extends "base.html" %}
+{% load static %}
+
+
+{% block title %}
+    Taxi Options | Dynamic Taxi
+{% endblock %}
+
+
+{% block extra_head %}
+
+<link
+    rel="stylesheet"
+    href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+>
+
+{% endblock %}
+
+
+{% block content %}
+
+<!-- =========================================
+     Ride Information
+========================================== -->
+
+<div class="card">
+
+    <h1 class="card-title">
+        Private Taxi Options
+    </h1>
+
+    <p>
+        Ride Request:
+        <strong>#{{ ride_request.id }}</strong>
+    </p>
+
+    <p>
+        Pickup:
+        <strong>
+            {{ ride_request.pickup_node.name }}
+        </strong>
+    </p>
+
+    <p>
+        Destination:
+        <strong>
+            {{ ride_request.destination_node.name }}
+        </strong>
+    </p>
+
+    <p>
+        Passengers:
+        <strong>
+            {{ ride_request.passenger_count }}
+        </strong>
+    </p>
+
+    <a
+        href="/passenger/dashboard/"
+        class="btn btn-secondary"
+    >
+        Back to Dashboard
+    </a>
+
+</div>
+
+
+<!-- =========================================
+     Taxi Map
+========================================== -->
+
+<div class="card">
+
+    <h2 class="card-title">
+        Available Taxis on Map
+    </h2>
+
+    <p class="text-muted">
+        Click a taxi marker to see its details
+        and preview Taxi → Pickup → Destination.
+    </p>
+
+    <div
+        id="private-taxi-map"
+        class="passenger-map taxi-options-map"
+        data-pickup-node-id="{{ ride_request.pickup_node_id }}"
+        data-destination-node-id="{{ ride_request.destination_node_id }}"
+    >
+    </div>
+
+    {{ private_map_options|json_script:"private-map-options-data" }}
+    {{ active_hold_vehicle_data|json_script:"private-held-vehicle-data" }}
+
+</div>
+
+
+<!-- =========================================
+     Active Temporary Hold
+========================================== -->
+
+{% if active_hold %}
+
+<div class="card">
+
+    <h2 class="card-title">
+        Taxi Temporarily Held
+    </h2>
+
+    <p>
+        Taxi:
+        <strong>
+            #{{ active_hold.vehicle_id }}
+        </strong>
+    </p>
+
+    <p>
+        Hold Status:
+        <span class="status">
+            {{ active_hold.status }}
+        </span>
+    </p>
+
+    <p>
+        Time remaining:
+        <strong
+            id="hold-countdown"
+            data-expires="{{ active_hold.expires_at|date:'c' }}"
+        >
+            Calculating...
+        </strong>
+    </p>
+
+    <div class="hold-actions">
+
+        <form
+            method="post"
+            action="/passenger/holds/{{ active_hold.id }}/confirm/"
+        >
+            {% csrf_token %}
+
+            <button
+                id="confirm-button"
+                type="submit"
+                class="btn btn-success"
+            >
+                Confirm Taxi
+            </button>
+        </form>
+
+        <form
+            method="post"
+            action="/passenger/holds/{{ active_hold.id }}/release/"
+        >
+            {% csrf_token %}
+
+            <button
+                type="submit"
+                class="btn btn-danger"
+            >
+                Release Taxi
+            </button>
+        </form>
+
+    </div>
+
+</div>
+
+
+{% else %}
+
+<!-- =========================================
+     Ranked Taxi Options
+========================================== -->
+
+<div class="card">
+
+    <h2 class="card-title">
+        Ranked Available Taxis
+    </h2>
+
+    {% if options %}
+
+        <div class="table-wrapper">
+
+            <table class="table">
+
+                <thead>
+
+                    <tr>
+                        <th>Rank</th>
+                        <th>Taxi</th>
+                        <th>Driver</th>
+                        <th>Capacity</th>
+                        <th>Pickup ETA</th>
+                        <th>Pickup Distance</th>
+                        <th>Trip ETA</th>
+                        <th>Trip Distance</th>
+                        <th>Total ETA</th>
+                        <th>Price</th>
+                        <th>Action</th>
+                    </tr>
+
+                </thead>
+
+                <tbody>
+
+                    {% for option in options %}
+
+                    <tr
+                        id="private-option-vehicle-{{ option.vehicle_id }}"
+                        class="private-option-row"
+                        onclick="PrivateTaxiMap.showOption({{ option.vehicle_id }})"
+                    >
+
+                        <td>
+                            <strong>
+                                #{{ option.rank }}
+                            </strong>
+                        </td>
+
+                        <td>
+                            Taxi #{{ option.vehicle_id }}
+                        </td>
+
+                        <td>
+                            {{ option.driver_username }}
+                        </td>
+
+                        <td>
+                            {{ option.capacity }}
+                        </td>
+
+                        <td>
+                            {{ option.pickup_eta_minutes }}
+                            min
+                        </td>
+
+                        <td>
+                            {{ option.pickup_distance_km|floatformat:2 }}
+                            km
+                        </td>
+
+                        <td>
+                            {{ option.trip_eta_minutes }}
+                            min
+                        </td>
+
+                        <td>
+                            {{ option.trip_distance_km|floatformat:2 }}
+                            km
+                        </td>
+
+                        <td>
+                            {{ option.total_eta_minutes }}
+                            min
+                        </td>
+
+                        <td>
+                            €{{ option.estimated_price|floatformat:2 }}
+                        </td>
+
+                        <td>
+
+                            <form
+                                method="post"
+                                action="/passenger/ride-requests/{{ ride_request.id }}/hold-taxi/"
+                                data-private-vehicle-id="{{ option.vehicle_id }}"
+                                onclick="event.stopPropagation();"
+                            >
+                                {% csrf_token %}
+
+                                <input
+                                    type="hidden"
+                                    name="vehicle_id"
+                                    value="{{ option.vehicle_id }}"
+                                >
+
+                                <button
+                                    type="submit"
+                                    class="btn btn-primary"
+                                >
+                                    Hold Taxi
+                                </button>
+
+                            </form>
+
+                        </td>
+
+                    </tr>
+
+                    {% endfor %}
+
+                </tbody>
+
+            </table>
+
+        </div>
+
+    {% else %}
+
+        <p class="text-muted">
+            No feasible taxis are currently available.
+        </p>
+
+        <a
+            href=""
+            class="btn btn-primary"
+        >
+            Refresh Options
+        </a>
+
+    {% endif %}
+
+</div>
+
+{% endif %}
+
+{% endblock %}
+
+
+{% block extra_js %}
+
+<script
+    src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+></script>
+
+<script
+    src="{% static 'road_network/map_core.js' %}"
+></script>
+
+<script
+    src="{% static 'assignment/private_taxi_map.js' %}"
+></script>
+
+
+{% if active_hold %}
+
+<script>
+
+    const countdownElement =
+        document.getElementById(
+            "hold-countdown"
+        );
+
+    const confirmButton =
+        document.getElementById(
+            "confirm-button"
+        );
+
+    const expiresAt =
+        new Date(
+            countdownElement.dataset.expires
+        );
+
+    function updateCountdown() {
+
+        const now = new Date();
+
+        const remainingMilliseconds =
+            expiresAt - now;
+
+        if (
+            remainingMilliseconds <= 0
+        ) {
+            countdownElement.textContent =
+                "Expired";
+
+            if (confirmButton) {
+                confirmButton.disabled = true;
+            }
+
+            return;
+        }
+
+        const remainingSeconds =
+            Math.ceil(
+                remainingMilliseconds / 1000
+            );
+
+        const minutes =
+            Math.floor(
+                remainingSeconds / 60
+            );
+
+        const seconds =
+            remainingSeconds % 60;
+
+        countdownElement.textContent =
+            `${minutes}:${seconds
+                .toString()
+                .padStart(2, "0")}`;
+    }
+
+    updateCountdown();
+
+    setInterval(
+        updateCountdown,
+        1000
+    );
+
+</script>
+
+{% endif %}
+
+{% endblock %}

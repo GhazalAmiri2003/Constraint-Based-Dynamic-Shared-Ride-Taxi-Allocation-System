@@ -1,0 +1,981 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <title>Simulated Road Network</title>
+
+    <!-- Leaflet CSS -->
+    <link
+        rel="stylesheet"
+        href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+    >
+
+    <style>
+        body {
+            margin: 0;
+            font-family: Arial, sans-serif;
+            background: #f5f5f5;
+        }
+
+        .header {
+            padding: 16px 24px;
+            background: white;
+            border-bottom: 1px solid #ddd;
+        }
+
+        .header h1 {
+            margin: 0;
+            font-size: 22px;
+        }
+
+        .header p {
+            margin: 6px 0 0;
+        }
+
+        #map {
+            width: 100%;
+            height: calc(100vh - 80px);
+            background: #fafafa;
+        }
+
+        /* Taxi */
+        .taxi-marker {
+            font-size: 28px;
+            text-align: center;
+            line-height: 34px;
+        }
+
+        /* Pickup و Destination */
+        .pickup-marker,
+        .destination-marker {
+            width: 30px;
+            height: 30px;
+            border-radius: 50%;
+            text-align: center;
+            line-height: 30px;
+            font-weight: bold;
+            color: white;
+        }
+
+        .pickup-marker {
+            background: #16a34a;
+        }
+
+        .destination-marker {
+            background: #dc2626;
+        }
+
+        /* دکمه‌های Taxi */
+        .action-button {
+            margin-top: 6px;
+            padding: 8px 13px;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-weight: bold;
+        }
+
+        .action-button:hover:not(:disabled) {
+            opacity: 0.8;
+        }
+
+        .action-button:disabled {
+            cursor: not-allowed;
+            opacity: 0.6;
+        }
+
+        .move-button {
+            background: #e5e7eb;
+            color: #111827;
+        }
+
+        .start-button {
+            background: #16a34a;
+            color: white;
+        }
+
+        .complete-button {
+            background: #2563eb;
+            color: white;
+        }
+    </style>
+</head>
+
+
+<body>
+
+<div class="header">
+    <h1>
+        Dynamic Shared-Ride Taxi System
+    </h1>
+
+    <p>
+        Simulated Road Network
+    </p>
+</div>
+
+
+<div id="map"></div>
+
+
+<!-- داده‌های Django -->
+{{ nodes|json_script:"network-nodes" }}
+{{ edges|json_script:"network-edges" }}
+{{ vehicles|json_script:"network-vehicles" }}
+{{ ride_routes|json_script:"ride-routes" }}
+
+
+<!-- Leaflet JS -->
+<script
+    src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js">
+</script>
+
+
+<script>
+
+    // =====================================================
+    // داده‌های Django
+    // =====================================================
+
+    const nodes = JSON.parse(
+        document.getElementById(
+            "network-nodes"
+        ).textContent
+    );
+
+    const edges = JSON.parse(
+        document.getElementById(
+            "network-edges"
+        ).textContent
+    );
+
+    const vehicles = JSON.parse(
+        document.getElementById(
+            "network-vehicles"
+        ).textContent
+    );
+
+    const rideRoutes = JSON.parse(
+        document.getElementById(
+            "ride-routes"
+        ).textContent
+    );
+
+
+    // =====================================================
+    // ساخت Map
+    // =====================================================
+
+    const map = L.map(
+        "map",
+        {
+            // مختصات شبیه‌سازی
+            crs: L.CRS.Simple,
+
+            minZoom: -2,
+            maxZoom: 10,
+            zoomSnap: 0.25
+        }
+    );
+
+
+    // =====================================================
+    // نگهداری Nodeها با ID
+    // =====================================================
+
+    const nodeMap = {};
+
+    nodes.forEach(function (node) {
+        nodeMap[node.id] = node;
+    });
+
+
+    // =====================================================
+    // رسم Edgeها
+    // =====================================================
+
+    edges.forEach(function (edge) {
+
+        const fromNode =
+            nodeMap[edge.from_node_id];
+
+        const toNode =
+            nodeMap[edge.to_node_id];
+
+        if (!fromNode || !toNode) {
+            return;
+        }
+
+
+        const line = L.polyline(
+            [
+                [
+                    fromNode.y,
+                    fromNode.x
+                ],
+                [
+                    toNode.y,
+                    toNode.x
+                ]
+            ],
+            {
+                weight: 4,
+                opacity: 0.65
+            }
+        ).addTo(map);
+
+
+        const popupContent =
+            "<strong>" +
+            fromNode.name +
+            " → " +
+            toNode.name +
+            "</strong>" +
+
+            "<br>Distance: " +
+            edge.distance_km +
+            " km" +
+
+            "<br>Travel Time: " +
+            edge.travel_time_minutes +
+            " min" +
+
+            "<br>Type: " +
+            edge.road_type +
+
+            "<br>Bidirectional: " +
+            edge.is_bidirectional;
+
+
+        line.bindPopup(
+            popupContent
+        );
+    });
+
+
+    // =====================================================
+    // رسم Nodeها
+    // =====================================================
+
+    nodes.forEach(function (node) {
+
+        const marker = L.circleMarker(
+            [
+                node.y,
+                node.x
+            ],
+            {
+                radius: 8,
+                weight: 2
+            }
+        ).addTo(map);
+
+
+        marker.bindTooltip(
+            node.name,
+            {
+                permanent: true,
+                direction: "top"
+            }
+        );
+
+
+        marker.bindPopup(
+            "<strong>" +
+            node.name +
+            "</strong>" +
+
+            "<br>Node ID: " +
+            node.id +
+
+            "<br>x: " +
+            node.x +
+
+            "<br>y: " +
+            node.y
+        );
+    });
+
+
+    // =====================================================
+    // رسم Taxiها
+    // =====================================================
+
+    vehicles.forEach(function (vehicle) {
+
+        const node =
+            nodeMap[
+                vehicle.current_node_id
+            ];
+
+        if (!node) {
+            return;
+        }
+
+
+        // Ride فعال همین Taxi
+        const activeRide =
+            rideRoutes.find(
+                function (rideRoute) {
+
+                    return (
+                        rideRoute.vehicle_id
+                        === vehicle.id
+                    );
+                }
+            );
+
+
+        let rideInfo =
+            "Active Ride: None";
+
+        let actionButton = "";
+
+
+        if (activeRide) {
+
+            rideInfo =
+                "Ride Status: " +
+                activeRide.ride_status +
+
+                "<br>Current Target: " +
+                activeRide.target_type;
+
+
+            // ---------------------------------------------
+            // ASSIGNED
+            // ---------------------------------------------
+
+            if (
+                activeRide.ride_status
+                === "ASSIGNED"
+            ) {
+
+                actionButton =
+                    '<button ' +
+                    'class="action-button move-button" ' +
+                    'disabled>' +
+                    'Accept Ride First' +
+                    '</button>';
+            }
+
+
+            // ---------------------------------------------
+            // ACCEPTED → حرکت به Pickup
+            // ---------------------------------------------
+
+            else if (
+                activeRide.ride_status
+                    === "ACCEPTED" &&
+
+                vehicle.current_node_id
+                    !== activeRide.pickup_node_id
+            ) {
+
+                actionButton =
+                    '<button ' +
+                    'class="action-button move-button" ' +
+                    'onclick="moveTaxiNext(' +
+                    vehicle.id +
+                    ')">' +
+                    'Move Next' +
+                    '</button>';
+            }
+
+
+            // ---------------------------------------------
+            // ACCEPTED + Taxi at Pickup → Start
+            // ---------------------------------------------
+
+            else if (
+                activeRide.ride_status
+                    === "ACCEPTED" &&
+
+                vehicle.current_node_id
+                    === activeRide.pickup_node_id
+            ) {
+
+                actionButton =
+                    '<button ' +
+                    'class="action-button start-button" ' +
+                    'onclick="startRide(' +
+                    activeRide.ride_id +
+                    ')">' +
+                    'Start Ride' +
+                    '</button>';
+            }
+
+
+            // ---------------------------------------------
+            // IN_PROGRESS → حرکت به Destination
+            // ---------------------------------------------
+
+            else if (
+                activeRide.ride_status
+                    === "IN_PROGRESS" &&
+
+                vehicle.current_node_id
+                    !== activeRide.destination_node_id
+            ) {
+
+                actionButton =
+                    '<button ' +
+                    'class="action-button move-button" ' +
+                    'onclick="moveTaxiNext(' +
+                    vehicle.id +
+                    ')">' +
+                    'Move Next' +
+                    '</button>';
+            }
+
+
+            // ---------------------------------------------
+            // IN_PROGRESS + Taxi at Destination → Complete
+            // ---------------------------------------------
+
+            else if (
+                activeRide.ride_status
+                    === "IN_PROGRESS" &&
+
+                vehicle.current_node_id
+                    === activeRide.destination_node_id
+            ) {
+
+                actionButton =
+                    '<button ' +
+                    'class="action-button complete-button" ' +
+                    'onclick="completeRide(' +
+                    activeRide.ride_id +
+                    ')">' +
+                    'Complete Ride' +
+                    '</button>';
+            }
+        }
+
+
+        // ---------------------------------------------
+        // Taxi Icon
+        // ---------------------------------------------
+
+        const taxiIcon = L.divIcon({
+            className: "taxi-marker",
+
+            html: "🚕",
+
+            iconSize: [
+                34,
+                34
+            ],
+
+            iconAnchor: [
+                17,
+                17
+            ]
+        });
+
+
+        const taxiMarker = L.marker(
+            [
+                node.y,
+                node.x
+            ],
+            {
+                icon: taxiIcon,
+
+                // Taxi بالاتر از P و D
+                zIndexOffset: 1000
+            }
+        ).addTo(map);
+
+
+        // ---------------------------------------------
+        // Popup Taxi
+        // ---------------------------------------------
+
+        const popupContent =
+            "<strong>Taxi #" +
+            vehicle.id +
+            "</strong>" +
+
+            "<br>Driver: " +
+            vehicle.driver__user__username +
+
+            "<br>Current Node: " +
+            node.name +
+
+            "<br>Capacity: " +
+            vehicle.capacity +
+
+            "<br>Ride Mode: " +
+            vehicle.ride_mode +
+
+            "<br>Available: " +
+            vehicle.is_available +
+
+            "<br>" +
+            rideInfo +
+
+            "<br><br>" +
+            actionButton;
+
+
+        taxiMarker.bindPopup(
+            popupContent
+        );
+    });
+
+
+    // =====================================================
+    // Pickup / Destination / Active Route
+    // =====================================================
+
+    rideRoutes.forEach(
+        function (rideRoute) {
+
+            const pickupNode =
+                nodeMap[
+                    rideRoute.pickup_node_id
+                ];
+
+            const destinationNode =
+                nodeMap[
+                    rideRoute.destination_node_id
+                ];
+
+
+            if (
+                !pickupNode ||
+                !destinationNode
+            ) {
+                return;
+            }
+
+
+            // =================================================
+            // Pickup
+            // =================================================
+
+            const pickupIcon =
+                L.divIcon(
+                    {
+                        className: "",
+
+                        html:
+                            '<div class="pickup-marker">' +
+                            'P' +
+                            '</div>',
+
+                        iconSize: [
+                            30,
+                            30
+                        ],
+
+                        iconAnchor: [
+                            15,
+                            15
+                        ]
+                    }
+                );
+
+
+            L.marker(
+                [
+                    pickupNode.y,
+                    pickupNode.x
+                ],
+                {
+                    icon: pickupIcon,
+
+                    // Taxi بالاتر باشد
+                    zIndexOffset: 400
+                }
+            )
+            .addTo(map)
+            .bindPopup(
+                "<strong>Pickup</strong>" +
+
+                "<br>Ride: #" +
+                rideRoute.ride_id +
+
+                "<br>Node: " +
+                pickupNode.name
+            );
+
+
+            // =================================================
+            // Destination
+            // =================================================
+
+            const destinationIcon =
+                L.divIcon(
+                    {
+                        className: "",
+
+                        html:
+                            '<div class="destination-marker">' +
+                            'D' +
+                            '</div>',
+
+                        iconSize: [
+                            30,
+                            30
+                        ],
+
+                        iconAnchor: [
+                            15,
+                            15
+                        ]
+                    }
+                );
+
+
+            L.marker(
+                [
+                    destinationNode.y,
+                    destinationNode.x
+                ],
+                {
+                    icon: destinationIcon,
+
+                    // Taxi بالاتر باشد
+                    zIndexOffset: 400
+                }
+            )
+            .addTo(map)
+            .bindPopup(
+                "<strong>Destination</strong>" +
+
+                "<br>Ride: #" +
+                rideRoute.ride_id +
+
+                "<br>Node: " +
+                destinationNode.name
+            );
+
+
+            // =================================================
+            // Active Route
+            // =================================================
+
+            const routePositions =
+                rideRoute.path_node_ids
+
+                .map(
+                    function (nodeId) {
+
+                        return (
+                            nodeMap[nodeId]
+                        );
+                    }
+                )
+
+                .filter(
+                    function (node) {
+
+                        return Boolean(node);
+                    }
+                )
+
+                .map(
+                    function (node) {
+
+                        return [
+                            node.y,
+                            node.x
+                        ];
+                    }
+                );
+
+
+            // اگر Taxi روی Target باشد، Path فقط یک Node دارد
+            if (
+                routePositions.length >= 2
+            ) {
+
+                const routeLine =
+                    L.polyline(
+                        routePositions,
+                        {
+                            weight: 8,
+                            opacity: 0.85,
+                            dashArray: "12, 8"
+                        }
+                    )
+                    .addTo(map);
+
+
+                routeLine.bindPopup(
+                    "<strong>" +
+                    "Active Ride Route" +
+                    "</strong>" +
+
+                    "<br>Ride: #" +
+                    rideRoute.ride_id +
+
+                    "<br>Vehicle: #" +
+                    rideRoute.vehicle_id +
+
+                    "<br>Ride Status: " +
+                    rideRoute.ride_status +
+
+                    "<br>Current Target: " +
+                    rideRoute.target_type
+                );
+            }
+        }
+    );
+
+
+    // =====================================================
+    // گرفتن CSRF Token
+    // =====================================================
+
+    function getCookie(name) {
+
+        const cookies =
+            document.cookie.split(";");
+
+
+        for (
+            const cookie of cookies
+        ) {
+
+            const trimmed =
+                cookie.trim();
+
+
+            if (
+                trimmed.startsWith(
+                    name + "="
+                )
+            ) {
+
+                return decodeURIComponent(
+                    trimmed.substring(
+                        name.length + 1
+                    )
+                );
+            }
+        }
+
+
+        return null;
+    }
+
+
+    // =====================================================
+    // Move Next
+    // =====================================================
+
+    async function moveTaxiNext(
+        vehicleId
+    ) {
+
+        try {
+
+            const response =
+                await fetch(
+                    "/api/road-network/map/vehicles/" +
+                    vehicleId +
+                    "/move-next/",
+                    {
+                        method: "POST",
+
+                        headers: {
+                            "X-CSRFToken":
+                                getCookie(
+                                    "csrftoken"
+                                )
+                        }
+                    }
+                );
+
+
+            const data =
+                await response.json();
+
+
+            if (!response.ok) {
+
+                alert(
+                    data.detail ||
+                    "Taxi movement failed."
+                );
+
+                return;
+            }
+
+
+            window.location.reload();
+
+
+        } catch (error) {
+
+            console.error(
+                error
+            );
+
+            alert(
+                "Unable to move the taxi."
+            );
+        }
+    }
+
+
+    // =====================================================
+    // Start Ride
+    // =====================================================
+
+    async function startRide(
+        rideId
+    ) {
+
+        try {
+
+            const response =
+                await fetch(
+                    "/api/road-network/map/rides/" +
+                    rideId +
+                    "/start/",
+                    {
+                        method: "POST",
+
+                        headers: {
+                            "X-CSRFToken":
+                                getCookie(
+                                    "csrftoken"
+                                )
+                        }
+                    }
+                );
+
+
+            const data =
+                await response.json();
+
+
+            if (!response.ok) {
+
+                alert(
+                    data.detail ||
+                    "Unable to start the ride."
+                );
+
+                return;
+            }
+
+
+            window.location.reload();
+
+
+        } catch (error) {
+
+            console.error(
+                error
+            );
+
+            alert(
+                "Unable to start the ride."
+            );
+        }
+    }
+
+
+    // =====================================================
+    // Complete Ride
+    // =====================================================
+
+    async function completeRide(
+        rideId
+    ) {
+
+        try {
+
+            const response =
+                await fetch(
+                    "/api/road-network/map/rides/" +
+                    rideId +
+                    "/complete/",
+                    {
+                        method: "POST",
+
+                        headers: {
+                            "X-CSRFToken":
+                                getCookie(
+                                    "csrftoken"
+                                )
+                        }
+                    }
+                );
+
+
+            const data =
+                await response.json();
+
+
+            if (!response.ok) {
+
+                alert(
+                    data.detail ||
+                    "Unable to complete the ride."
+                );
+
+                return;
+            }
+
+
+            window.location.reload();
+
+
+        } catch (error) {
+
+            console.error(
+                error
+            );
+
+            alert(
+                "Unable to complete the ride."
+            );
+        }
+    }
+
+
+    // =====================================================
+    // Zoom روی کل Network
+    // =====================================================
+
+    if (nodes.length > 0) {
+
+        const bounds =
+            L.latLngBounds(
+                nodes.map(
+                    function (node) {
+
+                        return [
+                            node.y,
+                            node.x
+                        ];
+                    }
+                )
+            );
+
+
+        map.fitBounds(
+            bounds.pad(
+                0.15
+            ),
+            {
+                padding: [
+                    40,
+                    40
+                ]
+            }
+        );
+    }
+
+</script>
+
+</body>
+
+</html>

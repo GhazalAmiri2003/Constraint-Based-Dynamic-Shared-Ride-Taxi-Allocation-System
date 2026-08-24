@@ -1,0 +1,479 @@
+{% extends "base.html" %}
+{% load static %}
+
+
+{% block title %}
+    Passenger Dashboard | Dynamic Taxi
+{% endblock %}
+
+
+{% block extra_head %}
+
+<link
+    rel="stylesheet"
+    href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+>
+
+{% endblock %}
+
+
+{% block content %}
+
+<!-- =========================================
+     Header
+========================================== -->
+
+<div class="card">
+
+    <h1 class="card-title">
+        Passenger Dashboard
+    </h1>
+
+    <p class="text-muted mb-0">
+        Welcome, {{ user.username }}.
+        Choose pickup and destination directly
+        from the simulated city map.
+    </p>
+
+</div>
+
+
+<!-- =========================================
+     New Ride Request
+========================================== -->
+
+<div class="card">
+
+    <h2 class="card-title">
+        New Ride Request
+    </h2>
+
+
+    <form
+        method="post"
+        id="ride-request-form"
+    >
+
+        {% csrf_token %}
+
+
+        {% if form.non_field_errors %}
+
+            <div class="message">
+
+                {% for error in form.non_field_errors %}
+                    {{ error }}
+                {% endfor %}
+
+            </div>
+
+        {% endif %}
+
+
+        <!-- Ride Type -->
+        <div class="form-group">
+
+            <label for="{{ form.ride_type.id_for_label }}">
+                {{ form.ride_type.label }}
+            </label>
+
+            {{ form.ride_type }}
+
+            {% for error in form.ride_type.errors %}
+                <div class="text-danger">
+                    {{ error }}
+                </div>
+            {% endfor %}
+
+        </div>
+
+
+        <!-- Passenger Count -->
+        <div class="form-group">
+
+            <label for="{{ form.passenger_count.id_for_label }}">
+                {{ form.passenger_count.label }}
+            </label>
+
+            {{ form.passenger_count }}
+
+            {% for error in form.passenger_count.errors %}
+                <div class="text-danger">
+                    {{ error }}
+                </div>
+            {% endfor %}
+
+        </div>
+
+
+        <!-- Hidden map-selected ModelChoice values -->
+        {{ form.pickup_node }}
+        {{ form.destination_node }}
+
+
+        {% for error in form.pickup_node.errors %}
+            <div class="text-danger">
+                Pickup: {{ error }}
+            </div>
+        {% endfor %}
+
+
+        {% for error in form.destination_node.errors %}
+            <div class="text-danger">
+                Destination: {{ error }}
+            </div>
+        {% endfor %}
+
+
+        <!-- =================================
+             Pickup / Destination Map
+        ================================== -->
+
+        <div class="map-selection-panel">
+
+            <div class="map-selection-toolbar">
+
+                <button
+                    type="button"
+                    id="select-pickup-mode"
+                    class="btn btn-secondary"
+                >
+                    Select Pickup
+                </button>
+
+                <button
+                    type="button"
+                    id="select-destination-mode"
+                    class="btn btn-secondary"
+                >
+                    Select Destination
+                </button>
+
+                <button
+                    type="button"
+                    id="clear-map-selection"
+                    class="btn btn-danger"
+                >
+                    Clear
+                </button>
+
+            </div>
+
+
+            <p
+                id="map-selection-hint"
+                class="text-muted"
+            >
+                Click a road node to choose your pickup.
+            </p>
+
+
+            <div class="map-selection-summary">
+
+                <div>
+                    <span class="map-selection-label">
+                        Pickup
+                    </span>
+
+                    <strong id="selected-pickup-label">
+                        Not selected
+                    </strong>
+                </div>
+
+
+                <div>
+                    <span class="map-selection-label">
+                        Destination
+                    </span>
+
+                    <strong id="selected-destination-label">
+                        Not selected
+                    </strong>
+                </div>
+
+
+                <div>
+                    <span class="map-selection-label">
+                        Route Preview
+                    </span>
+
+                    <strong id="route-preview-summary">
+                        Select pickup and destination
+                    </strong>
+                </div>
+
+            </div>
+
+
+            <div
+                id="passenger-node-map"
+                class="passenger-map"
+            >
+            </div>
+
+        </div>
+
+
+        <!-- Notes -->
+        <div class="form-group">
+
+            <label for="{{ form.notes.id_for_label }}">
+                {{ form.notes.label }}
+            </label>
+
+            {{ form.notes }}
+
+            {% for error in form.notes.errors %}
+                <div class="text-danger">
+                    {{ error }}
+                </div>
+            {% endfor %}
+
+        </div>
+
+
+        <button
+            type="submit"
+            class="btn btn-primary"
+        >
+            Create Ride Request
+        </button>
+
+    </form>
+
+</div>
+
+
+<!-- =========================================
+     Ride Requests
+========================================== -->
+
+<div class="card">
+
+    <h2 class="card-title">
+        My Ride Requests
+    </h2>
+
+
+    {% if ride_requests %}
+
+        <div class="table-wrapper">
+
+            <table class="table">
+
+                <thead>
+
+                    <tr>
+                        <th>ID</th>
+                        <th>Type</th>
+                        <th>Passengers</th>
+                        <th>Pickup</th>
+                        <th>Destination</th>
+                        <th>Status</th>
+                        <th>Action</th>
+                    </tr>
+
+                </thead>
+
+
+                <tbody>
+
+                    {% for ride_request in ride_requests %}
+
+                        <tr>
+
+                            <td>
+                                #{{ ride_request.id }}
+                            </td>
+
+                            <td>
+                                {{ ride_request.get_ride_type_display }}
+                            </td>
+
+                            <td>
+                                {{ ride_request.passenger_count }}
+                            </td>
+
+                            <td>
+                                {{ ride_request.pickup_node.name }}
+                            </td>
+
+                            <td>
+                                {{ ride_request.destination_node.name }}
+                            </td>
+
+                            <td>
+                                <span class="status">
+                                    {{ ride_request.get_status_display }}
+                                </span>
+                            </td>
+
+                            <td>
+
+                                {% if ride_request.status == "PENDING" %}
+
+                                    {% if ride_request.ride_type == "PRIVATE" %}
+
+                                        <a
+                                            href="/passenger/ride-requests/{{ ride_request.id }}/taxi-options/"
+                                            class="btn btn-primary"
+                                        >
+                                            Find Taxis
+                                        </a>
+
+                                    {% elif ride_request.ride_type == "SHARED" %}
+
+                                        <button
+                                            type="button"
+                                            class="btn btn-primary"
+                                            onclick="findSharedTaxis({{ ride_request.id }})"
+                                        >
+                                            Find Shared Taxis
+                                        </button>
+
+                                    {% endif %}
+
+
+                                {% elif ride_request.status == "ASSIGNED" %}
+
+                                    <button
+                                        type="button"
+                                        class="btn btn-primary"
+                                        onclick="PassengerTracking.toggle({{ ride_request.id }})"
+                                    >
+                                        Live Tracking
+                                    </button>
+
+
+                                {% elif ride_request.status == "COMPLETED" %}
+
+                                    <span class="text-muted">
+                                        Completed
+                                    </span>
+
+
+                                {% elif ride_request.status == "CANCELLED" %}
+
+                                    <span class="text-muted">
+                                        Cancelled
+                                    </span>
+
+
+                                {% else %}
+
+                                    <span class="text-muted">
+                                        No action
+                                    </span>
+
+                                {% endif %}
+
+                            </td>
+
+                        </tr>
+
+
+                        <!-- Shared Taxi Options -->
+                        {% if ride_request.status == "PENDING" and ride_request.ride_type == "SHARED" %}
+
+                            <tr>
+
+                                <td colspan="7">
+
+                                    <div
+                                        id="shared-options-{{ ride_request.id }}"
+                                        class="shared-options-container"
+                                        data-pickup-node-id="{{ ride_request.pickup_node_id }}"
+                                        data-destination-node-id="{{ ride_request.destination_node_id }}"
+                                    >
+                                    </div>
+
+                                </td>
+
+                            </tr>
+
+                        {% endif %}
+
+
+                        <!-- Live Tracking -->
+                        {% if ride_request.status == "ASSIGNED" %}
+
+                            <tr>
+
+                                <td colspan="7">
+
+                                    <div
+                                        id="ride-tracking-{{ ride_request.id }}"
+                                        class="ride-tracking-panel"
+                                        hidden
+                                    >
+
+                                        <div
+                                            id="tracking-info-{{ ride_request.id }}"
+                                            class="tracking-info"
+                                        >
+                                            <p class="text-muted">
+                                                Loading live simulated position...
+                                            </p>
+                                        </div>
+
+
+                                        <div
+                                            id="tracking-map-{{ ride_request.id }}"
+                                            class="passenger-map tracking-map"
+                                        >
+                                        </div>
+
+                                    </div>
+
+                                </td>
+
+                            </tr>
+
+                        {% endif %}
+
+
+                    {% endfor %}
+
+                </tbody>
+
+            </table>
+
+        </div>
+
+
+    {% else %}
+
+        <p class="text-muted">
+            You have no ride requests yet.
+        </p>
+
+    {% endif %}
+
+</div>
+
+{% endblock %}
+
+
+{% block extra_js %}
+
+<script
+    src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+></script>
+
+<script
+    src="{% static 'road_network/map_core.js' %}"
+></script>
+
+<script
+    src="{% static 'road_network/passenger_node_map.js' %}"
+></script>
+
+<script
+    src="{% static 'assignment/shared_passenger.js' %}"
+></script>
+
+<script
+    src="{% static 'rides/passenger_tracking.js' %}"
+></script>
+
+{% endblock %}

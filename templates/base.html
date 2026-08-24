@@ -1,0 +1,144 @@
+{% load static %}
+
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+
+    <meta
+        name="viewport"
+        content="width=device-width, initial-scale=1.0"
+    >
+
+    <title>
+        {% block title %}
+            Dynamic Taxi System
+        {% endblock %}
+    </title>
+
+    <link
+        rel="stylesheet"
+        href="{% static 'css/app.css' %}"
+    >
+
+    {% block extra_head %}
+    {% endblock %}
+</head>
+
+
+<body>
+
+    <!-- =========================================
+         Navbar
+    ========================================== -->
+
+    <nav class="navbar">
+
+        <div class="navbar-container">
+
+            <a
+                href="/"
+                class="navbar-brand"
+            >
+                Dynamic Taxi
+            </a>
+
+
+            <div class="navbar-links">
+
+                {% if user.is_authenticated %}
+
+    {% if user.is_staff %}
+
+        <a href="/admin/">
+            Admin
+        </a>
+
+        <a href="/api/road-network/map/">
+            Map
+        </a>
+
+    {% else %}
+
+        <a href="/">
+            Dashboard
+        </a>
+
+    {% endif %}
+
+
+                    <span class="navbar-user">
+                        {{ user.username }}
+                    </span>
+
+
+                    <a
+                        href="/logout/"
+                        class="nav-button"
+                    >
+                        Logout
+                    </a>
+
+
+                {% else %}
+
+                    <a href="/login/">
+                        Login
+                    </a>
+
+                    <a
+                        href="/register/"
+                        class="nav-button"
+                    >
+                        Register
+                    </a>
+
+                {% endif %}
+
+            </div>
+
+        </div>
+
+    </nav>
+
+
+    <!-- =========================================
+         Messages
+    ========================================== -->
+
+    {% if messages %}
+
+        <div class="messages-container">
+
+            {% for message in messages %}
+
+                <div class="message">
+                    {{ message }}
+                </div>
+
+            {% endfor %}
+
+        </div>
+
+    {% endif %}
+
+
+    <!-- =========================================
+         Main Content
+    ========================================== -->
+
+    <main class="main-container">
+
+        {% block content %}
+        {% endblock %}
+
+    </main>
+
+
+    {% block extra_js %}
+    {% endblock %}
+
+</body>
+
+</html>

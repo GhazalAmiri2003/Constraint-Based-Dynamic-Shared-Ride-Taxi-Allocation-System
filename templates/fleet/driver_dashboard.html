@@ -1,0 +1,1048 @@
+{% extends "base.html" %}
+{% load static %}
+
+
+{% block title %}
+    Driver Dashboard | Dynamic Taxi
+{% endblock %}
+
+
+{% block extra_head %}
+
+<link
+    rel="stylesheet"
+    href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+>
+
+{% endblock %}
+
+
+{% block content %}
+
+<!-- =========================================
+     Driver Header
+========================================== -->
+
+<div class="card">
+
+    <h1 class="card-title">
+        Driver Dashboard
+    </h1>
+
+    <p>
+        Welcome,
+        <strong>{{ user.username }}</strong>
+    </p>
+
+
+    <p>
+        Driver Status:
+
+        <span class="status">
+            {{ driver_profile.availability_status }}
+        </span>
+    </p>
+
+
+    {% if vehicle %}
+
+        {% if driver_profile.availability_status == "ONLINE" %}
+
+            <button
+                type="button"
+                class="btn btn-danger"
+                onclick="changeDriverStatus('OFFLINE')"
+            >
+                Go Offline
+            </button>
+
+        {% else %}
+
+            <button
+                type="button"
+                class="btn btn-success"
+                onclick="changeDriverStatus('ONLINE')"
+            >
+                Go Online
+            </button>
+
+        {% endif %}
+
+    {% endif %}
+
+</div>
+
+
+<!-- =========================================
+     Vehicle Registration
+========================================== -->
+
+{% if not vehicle %}
+
+<div class="card">
+
+    <h2 class="card-title">
+        Register Your Vehicle
+    </h2>
+
+    <p class="text-muted">
+        Register your taxi before receiving rides.
+    </p>
+
+
+    <form method="post">
+
+        {% csrf_token %}
+
+
+        {% if vehicle_form.non_field_errors %}
+
+            <div class="message">
+
+                {% for error in vehicle_form.non_field_errors %}
+
+                    {{ error }}
+
+                {% endfor %}
+
+            </div>
+
+        {% endif %}
+
+
+        {% for field in vehicle_form %}
+
+            <div class="form-group">
+
+                <label for="{{ field.id_for_label }}">
+                    {{ field.label }}
+                </label>
+
+                {{ field }}
+
+
+                {% for error in field.errors %}
+
+                    <div class="text-danger">
+                        {{ error }}
+                    </div>
+
+                {% endfor %}
+
+            </div>
+
+        {% endfor %}
+
+
+        <button
+            type="submit"
+            class="btn btn-primary"
+        >
+            Register Vehicle
+        </button>
+
+    </form>
+
+</div>
+
+
+{% else %}
+
+
+<!-- =========================================
+     CSRF for JavaScript Requests
+========================================== -->
+
+<form
+    id="csrf-form"
+    style="display: none;"
+>
+    {% csrf_token %}
+</form>
+
+
+<!-- =========================================
+     Vehicle Information
+========================================== -->
+
+<div class="card">
+
+    <h2 class="card-title">
+        My Vehicle
+    </h2>
+
+
+    <p>
+        Taxi ID:
+
+        <strong>
+            #{{ vehicle.id }}
+        </strong>
+    </p>
+
+
+    <p>
+        Capacity:
+
+        <strong>
+            {{ vehicle.capacity }}
+        </strong>
+    </p>
+
+
+    <p>
+        Vehicle Availability:
+
+        <strong>
+
+            {% if vehicle.is_available %}
+
+                Available
+
+            {% else %}
+
+                Unavailable
+
+            {% endif %}
+
+        </strong>
+    </p>
+
+
+    <p>
+        Ride Mode:
+
+        <span class="status">
+            {{ vehicle.ride_mode }}
+        </span>
+    </p>
+
+
+    <p>
+        Current Node:
+
+        <strong>
+
+            {% if vehicle.current_node %}
+
+                {{ vehicle.current_node.name }}
+
+            {% else %}
+
+                Not set
+
+            {% endif %}
+
+        </strong>
+    </p>
+
+</div>
+
+
+<!-- =========================================
+     Driver Operational Route Map
+========================================== -->
+
+<div class="card">
+
+    <div class="driver-map-card-header">
+
+        <div>
+
+            <h2 class="card-title">
+                Operational Route Map
+            </h2>
+
+            <p class="text-muted mb-0">
+                Live simulated view of your taxi,
+                assigned passenger groups,
+                pickup/drop-off stops,
+                and the remaining route.
+            </p>
+
+        </div>
+
+
+        <button
+            type="button"
+            class="btn btn-secondary"
+            onclick="
+                if (
+                    window.refreshDriverOperationalMap
+                ) {
+                    window.refreshDriverOperationalMap();
+                }
+            "
+        >
+            Refresh Map
+        </button>
+
+    </div>
+
+
+    <div
+        id="driver-operational-map-error"
+        class="shared-error driver-map-error"
+    >
+    </div>
+
+
+    <div
+        id="driver-operational-map-summary"
+        class="driver-operational-map-summary"
+    >
+
+        <p class="text-muted">
+            Loading operational ride information...
+        </p>
+
+    </div>
+
+
+    <div class="driver-map-legend">
+
+        <span>
+            <strong>T</strong>
+            Taxi
+        </span>
+
+        <span>
+            <strong>1P</strong>
+            Pickup stop
+        </span>
+
+        <span>
+            <strong>2D</strong>
+            Drop-off stop
+        </span>
+
+        <span>
+            <strong>NEXT</strong>
+            Next stop
+        </span>
+
+    </div>
+
+
+    <div
+        id="driver-operational-map"
+        class="driver-operational-map"
+    >
+    </div>
+
+</div>
+
+
+<!-- =========================================
+     Active Shared Ride
+========================================== -->
+
+<div class="card">
+
+    <h2 class="card-title">
+        Active Shared Ride
+    </h2>
+
+    <p class="text-muted">
+        Shared rides use the ordered route below.
+        Each Move Next action advances the taxi
+        one graph step toward the next pending stop.
+    </p>
+
+
+    <div
+        id="active-shared-ride-container"
+    >
+
+        <p class="text-muted">
+            Loading shared ride...
+        </p>
+
+    </div>
+
+</div>
+
+
+<!-- =========================================
+     Driver Rides
+========================================== -->
+
+<div class="card">
+
+    <h2 class="card-title">
+        My Rides
+    </h2>
+
+
+    {% if ride_rows %}
+
+        <div class="table-wrapper">
+
+            <table class="table">
+
+                <thead>
+
+                    <tr>
+
+                        <th>
+                            Ride
+                        </th>
+
+                        <th>
+                            Passenger
+                        </th>
+
+                        <th>
+                            Type
+                        </th>
+
+                        <th>
+                            Pickup
+                        </th>
+
+                        <th>
+                            Destination
+                        </th>
+
+                        <th>
+                            Passengers
+                        </th>
+
+                        <th>
+                            Status
+                        </th>
+
+                        <th>
+                            Action
+                        </th>
+
+                    </tr>
+
+                </thead>
+
+
+                <tbody>
+
+                {% for row in ride_rows %}
+
+                    <tr>
+
+                        <!-- =============================
+                             Ride ID
+                        ============================== -->
+
+                        <td>
+                            #{{ row.ride.id }}
+                        </td>
+
+
+                        <!-- =============================
+                             Passenger
+                        ============================== -->
+
+                        <td>
+                            {{ row.passenger_username }}
+                        </td>
+
+
+                        <!-- =============================
+                             Ride Type
+                        ============================== -->
+
+                        <td>
+                            {{ row.ride.ride_type }}
+                        </td>
+
+
+                        <!-- =============================
+                             Pickup
+                        ============================== -->
+
+                        <td>
+
+                            {% if row.ride_request %}
+
+                                {{ row.ride_request.pickup_node.name }}
+
+                            {% else %}
+
+                                -
+
+                            {% endif %}
+
+                        </td>
+
+
+                        <!-- =============================
+                             Destination
+                        ============================== -->
+
+                        <td>
+
+                            {% if row.ride_request %}
+
+                                {{ row.ride_request.destination_node.name }}
+
+                            {% else %}
+
+                                -
+
+                            {% endif %}
+
+                        </td>
+
+
+                        <!-- =============================
+                             Passenger Count
+                        ============================== -->
+
+                        <td>
+
+                            {% if row.ride_request %}
+
+                                {{ row.ride_request.passenger_count }}
+
+                            {% else %}
+
+                                -
+
+                            {% endif %}
+
+                        </td>
+
+
+                        <!-- =============================
+                             Status
+                        ============================== -->
+
+                        <td>
+
+                            <span class="status">
+                                {{ row.ride.status }}
+                            </span>
+
+                        </td>
+
+
+                        <!-- =================================
+                             Actions
+                        ================================== -->
+
+                        <td>
+
+                            <!-- =============================
+                                 ASSIGNED
+                            ============================== -->
+
+                            {% if row.ride.status == "ASSIGNED" %}
+
+                                <div class="driver-actions">
+
+                                    <button
+                                        type="button"
+                                        class="btn btn-success"
+                                        onclick="
+                                            acceptRide(
+                                                {{ row.ride.id }}
+                                            )
+                                        "
+                                    >
+                                        Accept
+                                    </button>
+
+
+                                    <button
+                                        type="button"
+                                        class="btn btn-danger"
+                                        onclick="
+                                            rejectRide(
+                                                {{ row.ride.id }}
+                                            )
+                                        "
+                                    >
+                                        Reject
+                                    </button>
+
+                                </div>
+
+
+                            <!-- =============================
+                                 ACCEPTED
+                            ============================== -->
+
+                            {% elif row.ride.status == "ACCEPTED" %}
+
+
+                                <!-- =========================
+                                     SHARED Ride
+                                ========================== -->
+
+                                {% if row.ride.ride_type == "SHARED" %}
+
+                                    <span class="text-muted">
+                                        Use Shared Ride controls above
+                                    </span>
+
+
+                                <!-- =========================
+                                     PRIVATE Ride
+                                ========================== -->
+
+                                {% elif row.ride_request %}
+
+                                    {% if vehicle.current_node_id == row.ride_request.pickup_node_id %}
+
+                                        <button
+                                            type="button"
+                                            class="btn btn-success"
+                                            onclick="
+                                                startRide(
+                                                    {{ row.ride.id }}
+                                                )
+                                            "
+                                        >
+                                            Start Ride
+                                        </button>
+
+                                    {% else %}
+
+                                        <button
+                                            type="button"
+                                            class="btn btn-primary"
+                                            onclick="moveNext()"
+                                        >
+                                            Move Next
+                                        </button>
+
+                                    {% endif %}
+
+
+                                {% else %}
+
+                                    <span class="text-muted">
+                                        Ride data unavailable
+                                    </span>
+
+                                {% endif %}
+
+
+                            <!-- =============================
+                                 IN PROGRESS
+                            ============================== -->
+
+                            {% elif row.ride.status == "IN_PROGRESS" %}
+
+
+                                <!-- =========================
+                                     SHARED Ride
+                                ========================== -->
+
+                                {% if row.ride.ride_type == "SHARED" %}
+
+                                    <span class="text-muted">
+                                        Use Shared Ride controls above
+                                    </span>
+
+
+                                <!-- =========================
+                                     PRIVATE Ride
+                                ========================== -->
+
+                                {% elif row.ride_request %}
+
+                                    {% if vehicle.current_node_id == row.ride_request.destination_node_id %}
+
+                                        <button
+                                            type="button"
+                                            class="btn btn-success"
+                                            onclick="
+                                                completeRide(
+                                                    {{ row.ride.id }}
+                                                )
+                                            "
+                                        >
+                                            Complete Ride
+                                        </button>
+
+                                    {% else %}
+
+                                        <button
+                                            type="button"
+                                            class="btn btn-primary"
+                                            onclick="moveNext()"
+                                        >
+                                            Move Next
+                                        </button>
+
+                                    {% endif %}
+
+
+                                {% else %}
+
+                                    <span class="text-muted">
+                                        Ride data unavailable
+                                    </span>
+
+                                {% endif %}
+
+
+                            <!-- =============================
+                                 COMPLETED
+                            ============================== -->
+
+                            {% elif row.ride.status == "COMPLETED" %}
+
+                                <span class="text-muted">
+                                    Completed
+                                </span>
+
+
+                            <!-- =============================
+                                 REJECTED
+                            ============================== -->
+
+                            {% elif row.ride.status == "REJECTED" %}
+
+                                <span class="text-muted">
+                                    Rejected
+                                </span>
+
+
+                            <!-- =============================
+                                 CANCELLED
+                            ============================== -->
+
+                            {% elif row.ride.status == "CANCELLED" %}
+
+                                <span class="text-muted">
+                                    Cancelled
+                                </span>
+
+
+                            <!-- =============================
+                                 Other Status
+                            ============================== -->
+
+                            {% else %}
+
+                                <span class="text-muted">
+                                    No action
+                                </span>
+
+                            {% endif %}
+
+                        </td>
+
+                    </tr>
+
+                {% endfor %}
+
+                </tbody>
+
+            </table>
+
+        </div>
+
+
+    {% else %}
+
+        <p class="text-muted">
+            No rides assigned yet.
+        </p>
+
+    {% endif %}
+
+</div>
+
+{% endif %}
+
+{% endblock %}
+
+
+<!-- =========================================
+     Driver JavaScript
+========================================== -->
+
+{% block extra_js %}
+
+{% if vehicle %}
+
+<script>
+
+    // =========================================
+    // CSRF Token
+    // =========================================
+
+    const csrfToken =
+        document.querySelector(
+            "#csrf-form input[name=csrfmiddlewaretoken]"
+        ).value;
+
+
+    // =========================================
+    // Generic API Request
+    // =========================================
+
+    async function sendRequest(
+        url,
+        method = "POST",
+        body = null
+    ) {
+
+        const options = {
+
+            method: method,
+
+            credentials: "same-origin",
+
+            headers: {
+
+                "X-CSRFToken":
+                    csrfToken,
+
+                "Content-Type":
+                    "application/json"
+
+            }
+
+        };
+
+
+        if (body !== null) {
+
+            options.body =
+                JSON.stringify(body);
+
+        }
+
+
+        const response =
+            await fetch(
+                url,
+                options
+            );
+
+
+        let data = {};
+
+
+        try {
+
+            data =
+                await response.json();
+
+        }
+        catch {
+
+            data = {};
+
+        }
+
+
+        if (!response.ok) {
+
+            const message =
+                data.detail
+                || "Operation failed.";
+
+
+            alert(message);
+
+
+            return false;
+
+        }
+
+
+        return true;
+
+    }
+
+
+    // =========================================
+    // Driver Online / Offline
+    // =========================================
+
+    async function changeDriverStatus(
+        newStatus
+    ) {
+
+        const success =
+            await sendRequest(
+                "/api/driver/availability/",
+                "PATCH",
+                {
+                    availability_status:
+                        newStatus
+                }
+            );
+
+
+        if (success) {
+
+            window.location.reload();
+
+        }
+
+    }
+
+
+    // =========================================
+    // Accept Ride
+    // =========================================
+
+    async function acceptRide(
+        rideId
+    ) {
+
+        const success =
+            await sendRequest(
+                `/api/driver/rides/${rideId}/accept/`
+            );
+
+
+        if (success) {
+
+            window.location.reload();
+
+        }
+
+    }
+
+
+    // =========================================
+    // Reject Ride
+    // =========================================
+
+    async function rejectRide(
+        rideId
+    ) {
+
+        const confirmed =
+            window.confirm(
+                "Are you sure you want to reject this ride?"
+            );
+
+
+        if (!confirmed) {
+
+            return;
+
+        }
+
+
+        const success =
+            await sendRequest(
+                `/api/driver/rides/${rideId}/reject/`
+            );
+
+
+        if (success) {
+
+            window.location.reload();
+
+        }
+
+    }
+
+
+    // =========================================
+    // PRIVATE Ride:
+    // Move One Node
+    // =========================================
+
+    async function moveNext() {
+
+        const success =
+            await sendRequest(
+                "/api/vehicles/me/move-next/"
+            );
+
+
+        if (success) {
+
+            window.location.reload();
+
+        }
+
+    }
+
+
+    // =========================================
+    // PRIVATE Ride:
+    // Start Ride
+    // =========================================
+
+    async function startRide(
+        rideId
+    ) {
+
+        const success =
+            await sendRequest(
+                `/api/driver/rides/${rideId}/start/`
+            );
+
+
+        if (success) {
+
+            window.location.reload();
+
+        }
+
+    }
+
+
+    // =========================================
+    // PRIVATE Ride:
+    // Complete Ride
+    // =========================================
+
+    async function completeRide(
+        rideId
+    ) {
+
+        const success =
+            await sendRequest(
+                `/api/driver/rides/${rideId}/complete/`
+            );
+
+
+        if (success) {
+
+            window.location.reload();
+
+        }
+
+    }
+
+</script>
+
+
+<!-- =========================================
+     Leaflet + Driver Operational Map
+========================================== -->
+
+<script
+    src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+></script>
+
+<script
+    src="{% static 'road_network/map_core.js' %}?v=driver-map1"
+></script>
+
+<script
+    src="{% static 'road_network/driver_operational_map.js' %}?v=driver-map1"
+></script>
+
+
+<!-- =========================================
+     Shared Ride Driver JavaScript
+========================================== -->
+
+<script
+    src="{% static 'assignment/shared_driver.js' %}?v=driver-map1"
+></script>
+
+{% endif %}
+
+{% endblock %}
