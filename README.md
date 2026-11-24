@@ -48,7 +48,7 @@ Python · Django · Django REST Framework · PostgreSQL · pytest · JavaScript
 
 ## Local setup
 
-Create a Python virtual environment, install the dependencies from `requirements.txt`, and configure a local PostgreSQL database. The settings load database configuration from environment variables (including `DB_NAME`, `DB_USER`, `DB_PASSWORD`, `DB_HOST`, and `DB_PORT`).
+Create a Python virtual environment, install dependencies from `requirements.txt`, and configure a local PostgreSQL database. Copy `.env.example` to `.env`, generate a new Django secret key locally and populate the database values. Set `DJANGO_DEBUG=true` only for local development. The default configuration disables debug and limits allowed hosts. Never commit the real `.env` file.
 
 ```bash
 python -m venv .venv
